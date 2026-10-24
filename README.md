@@ -38,7 +38,7 @@
 
    ```sh
    WINEPREFIX="$HOME/Library/Application Support/MaPC/Bottles/steam" \
-   "$HOME/Library/Application Support/MaPC/Engines/<версия движка>/Wine Staging.app/Contents/MacOS/wine" \
+   "$HOME/Library/Application Support/MaPC/Engines/<версия движка>/Wine Staging.app/Contents/Resources/wine/bin/wine" \
    reg add 'HKCU\Software\Wine\DllOverrides' /v wsock32 /d native,builtin /f
    ```
 5. Запустите Steam через MaPC. Millennium покажет окно приветствия, в Steam появятся его настройки, а в папке Steam будет `millennium/plugins`.
@@ -78,7 +78,7 @@ grep '\[mapc-compat\]' "$HOME/Library/Application Support/MaPC/Bottles/steam/dri
 
 ```sh
 WINEPREFIX="$HOME/Library/Application Support/MaPC/Bottles/steam" \
-"$HOME/Library/Application Support/MaPC/Engines/<версия движка>/Wine Staging.app/Contents/MacOS/wine" \
+"$HOME/Library/Application Support/MaPC/Engines/<версия движка>/Wine Staging.app/Contents/Resources/wine/bin/wine" \
 reg delete 'HKCU\Software\Wine\DllOverrides' /v wsock32 /f
 ```
 
