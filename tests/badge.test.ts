@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { ensureBadge, BADGE_ID } from '../frontend/ui/badge';
+import { VERDICT_LABEL } from '../frontend/core/verdict';
 import { createRequestGuard, createWatcher, type WatchDeps } from '../frontend/ui/observer';
 
 const newRow = () => new Window().document.createElement('div') as unknown as HTMLElement;
@@ -10,14 +11,14 @@ describe('ensureBadge', () => {
     const row = newRow();
     ensureBadge(row, { kind: 'loading' });
     expect(row.querySelectorAll('#mapc-compat-badge').length).toBe(1);
-    expect(row.textContent).toContain('Проверяю…');
+    expect(row.querySelector('#mapc-compat-badge')?.getAttribute('aria-label')).toBe('Проверяю…');
     ensureBadge(row, { kind: 'done', verdict: 'ok', reasons: [{ source: 'AppleGamingWiki', text: 'Wine: играбельно' }] });
     expect(row.querySelectorAll('#mapc-compat-badge').length).toBe(1);
-    expect(row.textContent).toContain('Пойдёт');
+    expect(row.querySelector('#mapc-compat-badge')?.getAttribute('aria-label')).toBe('Пойдёт');
     row.innerHTML = ''; // Steam re-rendered the row
     ensureBadge(row, { kind: 'done', verdict: 'no', reasons: [] });
     expect(row.querySelectorAll('#mapc-compat-badge').length).toBe(1);
-    expect(row.textContent).toContain('Не пойдёт');
+    expect(row.querySelector('#mapc-compat-badge')?.getAttribute('aria-label')).toBe('Не пойдёт');
   });
 
   test('tooltip lists one reason per line', () => {
@@ -31,7 +32,7 @@ describe('ensureBadge', () => {
       ],
     });
     expect(el.id).toBe(BADGE_ID);
-    expect(el.title).toBe('ProtonDB: a\nЖелезо: b');
+    expect(el.title).toBe(`${VERDICT_LABEL.caveats}\nProtonDB: a\nЖелезо: b`);
   });
 
   test('identical state does not touch the DOM again', () => {
@@ -124,7 +125,7 @@ describe('createWatcher', () => {
     expect(doc.querySelectorAll('#mapc-compat-badge').length).toBe(1);
     expect(r2.querySelector('#mapc-compat-badge')).not.toBeNull();
     expect(r1.querySelector('#mapc-compat-badge')).toBeNull();
-    expect(doc.body.textContent).toContain('Пойдёт');
+    expect(doc.body.querySelector('#mapc-compat-badge')?.getAttribute('aria-label')).toBe('Пойдёт');
     w.stop();
   });
 
@@ -146,7 +147,7 @@ describe('createWatcher', () => {
       const b = sec.querySelectorAll('#mapc-compat-badge');
       expect(b.length).toBe(1);
       expect(b[0].parentElement).toBe(sec);
-      expect(b[0].textContent).toContain('Пойдёт');
+      expect(b[0].getAttribute('aria-label')).toBe('Пойдёт');
     }
     expect(doc.querySelectorAll('#mapc-compat-badge').length).toBe(2);
     w.stop();
@@ -179,7 +180,7 @@ describe('createWatcher', () => {
     w.scan();
     await tick();
     w.scan();
-    expect(row.textContent).toContain('Пойдёт');
+    expect(row.querySelector('#mapc-compat-badge')?.getAttribute('aria-label')).toBe('Пойдёт');
     row.innerHTML = '';
     const stat = inner.createElement('span');
     stat.className = STAT;
@@ -219,7 +220,7 @@ describe('createWatcher', () => {
     await tick();
     await tick();
     w.scan();
-    expect(row.textContent).toContain('Неизвестно');
+    expect(row.querySelector('#mapc-compat-badge')?.getAttribute('aria-label')).toBe('Неизвестно');
     w.stop();
   });
 
