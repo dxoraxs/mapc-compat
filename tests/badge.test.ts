@@ -128,6 +128,31 @@ describe('createWatcher', () => {
     w.stop();
   });
 
+  test('real Steam markup: badge goes into each GameStatsSection, not into a stat tooltip wrapper', async () => {
+    const { doc, deps } = mk();
+    const sections = [0, 1].map(() => {
+      const sec = doc.createElement('div');
+      sec.className = 'hash GameStatsSection';
+      addRow(sec);
+      addRow(sec);
+      doc.body.appendChild(sec);
+      return sec;
+    });
+    const w = createWatcher(deps);
+    w.scan();
+    await tick();
+    w.scan();
+    for (const sec of sections) {
+      const b = sec.querySelectorAll('#mapc-compat-badge');
+      expect(b.length).toBe(1);
+      expect(b[0].parentElement).toBe(sec);
+      expect(b[0].textContent).toContain('Пойдёт');
+    }
+    expect(doc.querySelectorAll('#mapc-compat-badge').length).toBe(2);
+    w.stop();
+    expect(doc.querySelectorAll('#mapc-compat-badge').length).toBe(0);
+  });
+
   test('non-Steam appid: zero gather calls and existing badge removed', () => {
     let id = 100;
     const { doc, calls, deps } = mk({ getAppId: () => id });

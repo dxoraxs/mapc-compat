@@ -54,10 +54,11 @@ function frameDocs(doc: Document, out: Document[] = []): Document[] {
 
 const allDocs = (doc: Document): Document[] => [doc, ...frameDocs(doc)];
 
-function removeBadgesExcept(docs: Document[], keep: HTMLElement | null) {
+function removeBadgesExcept(docs: Document[], keep: HTMLElement | null, keepAll: HTMLElement[] = []) {
+  const kept = keep ? [keep, ...keepAll] : keepAll;
   for (const d of docs) {
     d.querySelectorAll(`#${BADGE_ID}`).forEach((e) => {
-      if (!keep || !keep.contains(e)) e.remove();
+      if (!kept.some((k) => k === e.parentElement)) e.remove();
     });
   }
 }
@@ -129,8 +130,17 @@ export function createWatcher(deps: WatchDeps) {
       });
     }
     if (!rows.length) return;
-    const pick = (label && rows.find((r) => r.querySelector(`.${label}`))) || rows[0];
-    removeBadgesExcept(docs, pick);
+    // Real Steam markup: .GameStatsSection > .tool-tip-source > .GameStat. The page has the
+    // section twice (normal and the sticky bar shown on scroll), so each section gets a badge.
+    const sections: HTMLElement[] = [];
+    for (const r of rows) {
+      const sec = r.closest('.GameStatsSection') as HTMLElement | null;
+      if (sec && !sections.includes(sec)) sections.push(sec);
+    }
+    const targets = sections.length
+      ? sections
+      : [(label && rows.find((r) => r.querySelector(`.${label}`))) || rows[0]];
+    removeBadgesExcept(docs, null, targets);
 
     if (startedFor !== appId) {
       startedFor = appId;
@@ -153,8 +163,10 @@ export function createWatcher(deps: WatchDeps) {
         (e) => fail(appId, isCurrent, e),
       );
     }
-    if (result && result.appId === appId) ensureBadge(pick, { kind: 'done', ...result.value }, stat);
-    else ensureBadge(pick, { kind: 'loading' }, stat);
+    for (const row of targets) {
+      if (result && result.appId === appId) ensureBadge(row, { kind: 'done', ...result.value }, stat);
+      else ensureBadge(row, { kind: 'loading' }, stat);
+    }
   }
 
   function start() {
@@ -183,32 +195,46 @@ export function createWatcher(deps: WatchDeps) {
 
 export function startObserver(): () => void {
   const watchers = new Set<{ stop: () => void }>();
+  const attached = new WeakSet<Document>();
   let stopped = false;
+
+  // Steam keeps MainWindowBrowserManager in the shared JS context, not in the popup window.
+  const appIdOf = (win: any) =>
+    appIdFromPath(
+      (win?.MainWindowBrowserManager ?? (globalThis as any).MainWindowBrowserManager)?.m_lastLocation?.pathname,
+    );
+
+  const attach = (name: string, win: any, via: string) => {
+    if (stopped || !name.startsWith('SP ')) return;
+    const doc: Document | undefined = win?.document;
+    if (!doc || attached.has(doc)) return;
+    attached.add(doc);
+    console.log(`${LOG} watching ${name}`);
+    const cache = new TtlCache(localStorage, Date.now);
+    const w = createWatcher({
+      doc,
+      getAppId: () => appIdOf(win),
+      findClasses: steamClasses,
+      gather: (appId) => gatherVerdict(appId, { fetch: fetchUrl, cache, profile: loadProfile() }),
+    });
+    watchers.add(w);
+    try {
+      win.addEventListener?.('unload', () => {
+        w.stop();
+        watchers.delete(w);
+      });
+    } catch {
+      // no unload hook available
+    }
+    w.start();
+  };
+
+  const hook = (Millennium as any)?.AddWindowCreateHook;
+  console.log(`${LOG} AddWindowCreateHook ${typeof hook === 'function' ? 'available' : 'missing'}`);
   try {
-    (Millennium as any).AddWindowCreateHook?.((context: any) => {
+    hook?.((context: any) => {
       try {
-        const name: string = context?.m_strName ?? '';
-        if (stopped || !name.startsWith('SP ')) return;
-        const win = context.m_popup ?? context.m_window;
-        const doc: Document | undefined = win?.document;
-        if (!doc) return;
-        const cache = new TtlCache(localStorage, Date.now);
-        const w = createWatcher({
-          doc,
-          getAppId: () => appIdFromPath(win.MainWindowBrowserManager?.m_lastLocation?.pathname),
-          findClasses: steamClasses,
-          gather: (appId) => gatherVerdict(appId, { fetch: fetchUrl, cache, profile: loadProfile() }),
-        });
-        watchers.add(w);
-        try {
-          win.addEventListener?.('unload', () => {
-            w.stop();
-            watchers.delete(w);
-          });
-        } catch {
-          // no unload hook available
-        }
-        w.start();
+        attach(context?.m_strName ?? '', context?.m_popup ?? context?.m_window, 'hook');
       } catch (e) {
         console.error(`${LOG} window hook failed: ${String(e)}`);
       }
@@ -216,8 +242,30 @@ export function startObserver(): () => void {
   } catch (e) {
     console.error(`${LOG} startObserver failed: ${String(e)}`);
   }
+
+  // Windows that already existed before the plugin loaded never reach the create hook.
+  const scanExisting = () => {
+    try {
+      const pm = (globalThis as any).g_PopupManager;
+      const popups: any[] = [];
+      const map = pm?.m_mapPopups;
+      if (map?.values) popups.push(...map.values());
+      else if (typeof pm?.GetPopups === 'function') popups.push(...pm.GetPopups());
+      for (const p of popups) attach(p?.m_strName ?? p?.m_strTitle ?? '', p?.m_popup ?? p?.window, 'popup manager');
+    } catch (e) {
+      console.error(`${LOG} popup scan failed: ${String(e)}`);
+    }
+  };
+  scanExisting();
+  let ticks = 0;
+  const poll = setInterval(() => {
+    if (stopped || ++ticks > 30) return clearInterval(poll);
+    scanExisting();
+  }, 2000);
+
   return () => {
     stopped = true;
+    clearInterval(poll);
     watchers.forEach((w) => w.stop());
     watchers.clear();
   };
