@@ -62,6 +62,6 @@ describe('verdict', () => {
   test('no em dash, hardware line always present', () => {
     const r = decide(inputsFor(1245620, hwOk));
     expect(r.reasons.some((x) => x.source === 'Железо')).toBe(true);
-    expect(JSON.stringify(r)).not.toContain('—');
+    expect(JSON.stringify(r)).not.toContain(String.fromCharCode(0x2014));
   });
 });
