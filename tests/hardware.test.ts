@@ -27,4 +27,12 @@ describe('hardware', () => {
     expect(compareHardware(DEFAULT_PROFILE, {}, {}).level).toBe('unknown');
     expect(compareHardware(DEFAULT_PROFILE, parseRequirements(w3.minimum!), parseRequirements(w3.recommended!)).text).toContain('RTX 2070');
   });
+  test('borderline and RAM-below-minimum rulings', () => {
+    const m3 = { chip: 'M3', gpuCores: 10, ramGb: 16 };
+    expect(compareHardware(m3, { gpu: 'GTX 1060', ramGb: 8 }, { gpu: 'RTX 3060 Ti', ramGb: 16 }).level).toBe('borderline');
+    // (a) min has RAM but unrecognized GPU, rec tier known and passing
+    expect(compareHardware({ chip: 'M5 Pro', gpuCores: 20, ramGb: 8 }, { gpu: 'DirectX 11 card', ramGb: 16 }, { gpu: 'GTX 1060' }).level).toBe('weak');
+    // (b) min GPU+RAM, rec passing tier without ramGb
+    expect(compareHardware({ chip: 'M5 Pro', gpuCores: 20, ramGb: 8 }, { gpu: 'GTX 1060', ramGb: 16 }, { gpu: 'GTX 1060' }).level).toBe('weak');
+  });
 });

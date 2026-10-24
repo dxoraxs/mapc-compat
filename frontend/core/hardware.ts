@@ -83,11 +83,11 @@ export function compareHardware(p: MacProfile, min?: Requirements, rec?: Require
   const mac = macTier(p);
   const label = `${p.chip} примерно как ${(GPU_TIERS[mac] ?? []).slice(0, 2).join(' / ')}`;
   const ramOk = (r?: Requirements) => r?.ramGb === undefined || p.ramGb * 0.75 >= r.ramGb;
+  const minFail = (minTier !== null && mac < minTier) || !ramOk(min);
+  const gpuText = (r?: Requirements) => r?.gpu ?? '';
+  if (minFail) return { level: 'weak', text: `${label} против требуемой ${gpuText(min) || gpuText(rec)}` };
   if (recTier !== null && mac >= recTier && ramOk(rec)) {
-    return { level: 'ok', text: `${label} против требуемой ${rec!.gpu}` };
+    return { level: 'ok', text: `${label} против требуемой ${gpuText(rec)}` };
   }
-  if (minTier !== null && (mac < minTier || !ramOk(min))) {
-    return { level: 'weak', text: `${label} против требуемой ${min!.gpu}` };
-  }
-  return { level: 'borderline', text: `${label} против требуемой ${(rec?.gpu && recTier !== null ? rec.gpu : min!.gpu)}` };
+  return { level: 'borderline', text: `${label} против требуемой ${recTier !== null ? gpuText(rec) : gpuText(min)}` };
 }
