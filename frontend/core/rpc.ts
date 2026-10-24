@@ -1,3 +1,5 @@
+import { callable } from '@steambrew/client';
+
 export type FetchResult = { ok: true; status: number; body: string } | { ok: false; error: string };
 
 /** Lua returns JSON text; Millennium may wrap a string result in quotes, so decode up to twice. */
@@ -12,11 +14,7 @@ let fetchUrlRpc: ((args: { url: string }) => Promise<string>) | null = null;
 
 export async function fetchUrl(url: string): Promise<FetchResult> {
   try {
-    if (!fetchUrlRpc) {
-      // Loaded lazily so unit tests can import this module without Steam.
-      const { callable } = await import('@steambrew/client');
-      fetchUrlRpc = callable<[{ url: string }], string>('FetchUrl');
-    }
+    if (!fetchUrlRpc) fetchUrlRpc = callable<[{ url: string }], string>('FetchUrl');
     return decodeRpc<FetchResult>(await fetchUrlRpc({ url }));
   } catch (e) {
     return { ok: false, error: String(e) };
