@@ -45,6 +45,11 @@ describe('verdict', () => {
     expect(decide({ steam: { mac: true, requirements: null }, agw: { pageId: 1, native: 'broken', rosetta: 'broken', crossover: 'runs', wine: null }, anticheat: null, proton: null, hw: hwOk, errors: [] }).verdict).toBe('caveats');
     expect(decide({ steam: null, agw: null, anticheat: null, proton: null, hw: hwUnknown, errors: [{ source: 'Сеть', text: 'Steam: таймаут' }] }).reasons).toContainEqual({ source: 'Сеть', text: 'Steam: таймаут' });
   });
+  test('mac verdict via AGW native or rosetta with steam.mac false', () => {
+    const base = { steam: steamNo, anticheat: null, proton: null, hw: hwOk, errors: [] };
+    expect(decide({ ...base, agw: { pageId: 1, native: 'good', rosetta: null, crossover: null, wine: null } }).verdict).toBe('mac');
+    expect(decide({ ...base, agw: { pageId: 1, native: null, rosetta: 'good', crossover: 'broken', wine: null } }).verdict).toBe('mac');
+  });
   test('proton and hardware rules', () => {
     const base = { steam: steamNo, agw: null, anticheat: null, hw: hwOk, errors: [] };
     const gold = decide({ ...base, proton: { tier: 'gold', total: 50 } });
