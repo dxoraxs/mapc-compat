@@ -42,6 +42,7 @@ function deps(opts: { fail?: string; status?: number; failStatusHost?: string } 
     hitsTo: (host: string) => hits.filter((u) => new URL(u).host === host).length,
     advance: (ms: number) => void (t += ms),
     store,
+    bodiesDelete: (u: string) => void bodies.delete(u),
   };
   return d;
 }
@@ -79,8 +80,10 @@ describe('gather', () => {
 
   test('protondb 404 is no data, not an error', async () => {
     const d = deps();
-    const r = await gatherVerdict(1, d);
-    expect(r.reasons.some((x) => x.text.includes('ProtonDB') && x.source === 'Сеть')).toBe(false);
+    d.bodiesDelete(protonUrl(292030));
+    const r = await gatherVerdict(292030, d);
+    expect(r.verdict).toBe('ok');
+    expect(r.reasons.some((x) => x.source === 'Сеть' && x.text.includes('ProtonDB'))).toBe(false);
   });
 
   test('error cached 10 minutes only', async () => {
@@ -111,6 +114,54 @@ describe('gather', () => {
     d.advance(8 * 24 * 60 * MIN);
     await gatherVerdict(292030, d);
     expect(d.hitsTo('store.steampowered.com')).toBe(n + 1);
+  });
+
+  test('non-steam app makes no calls', async () => {
+    const d = deps();
+    const r = await gatherVerdict(0x80000001, d);
+    expect(d.calls()).toBe(0);
+    expect(d.store.size).toBe(0);
+    expect(r.verdict).toBe('unknown');
+    expect(r.reasons.length).toBe(1);
+  });
+
+  test('corrupt cache entry is refetched', async () => {
+    for (const bad of ['null', '{}', '"x"', '{"s":"zzz"}']) {
+      const d = deps();
+      d.cache.set('steam:292030', bad, 1e9);
+      expect((await gatherVerdict(292030, d)).verdict).toBe('ok');
+      expect(d.hitsTo('store.steampowered.com')).toBe(1);
+    }
+  });
+
+  test('rejected fetch becomes an error', async () => {
+    const d = deps();
+    const orig = d.fetch;
+    d.fetch = async (u: string) => {
+      if (u.includes('protondb')) throw new Error('boom');
+      return orig(u);
+    };
+    const r = await gatherVerdict(292030, d);
+    expect(r.verdict).toBe('ok');
+    expect(r.reasons.some((x) => x.source === 'Сеть' && x.text.includes('ProtonDB'))).toBe(true);
+  });
+
+  test('status error cached 10 minutes only', async () => {
+    const d = deps({ failStatusHost: 'www.protondb.com', status: 429 });
+    await gatherVerdict(292030, d);
+    d.advance(5 * MIN);
+    await gatherVerdict(292030, d);
+    expect(d.hitsTo('www.protondb.com')).toBe(1);
+    d.advance(6 * MIN);
+    await gatherVerdict(292030, d);
+    expect(d.hitsTo('www.protondb.com')).toBe(2);
+  });
+
+  test('awacy cache holds compact form, not raw file', async () => {
+    const d = deps();
+    await gatherVerdict(292030, d);
+    const raw = d.store.get('mapc-compat:awacy')!;
+    expect(raw.length).toBeLessThan(fx('awacy-subset.json').length);
   });
 
   test('non-steam shortcut', () => {

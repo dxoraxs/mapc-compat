@@ -29,7 +29,8 @@ async function cached<T>(deps: GatherDeps, key: string, ttl: number, load: () =>
   const hit = deps.cache.get(key);
   if (hit !== null) {
     try {
-      return JSON.parse(hit) as Entry<T>;
+      const e = JSON.parse(hit);
+      if (e && typeof e === 'object' && (e.s === 'ok' || e.s === 'none' || e.s === 'err')) return e as Entry<T>;
     } catch {
       // corrupt entry: refetch
     }
@@ -42,7 +43,12 @@ async function cached<T>(deps: GatherDeps, key: string, ttl: number, load: () =>
 type Body = { s: 'ok'; body: string } | { s: 'err'; e: string } | { s: 'missing' };
 
 async function get(deps: GatherDeps, url: string): Promise<Body> {
-  const r = await deps.fetch(url);
+  let r: FetchResult;
+  try {
+    r = await deps.fetch(url);
+  } catch (e) {
+    return { s: 'err', e: String(e) };
+  }
   if (r.ok === false) return { s: 'err', e: r.error };
   if (r.status === 404) return { s: 'missing' };
   if (r.status < 200 || r.status >= 300) return { s: 'err', e: `HTTP ${r.status}` };
@@ -84,15 +90,33 @@ const agwSource = (appId: number, deps: GatherDeps) =>
     return failure !== null ? { s: 'err', e: failure } : { s: 'none' };
   });
 
-/** The whole AWACY file is one cache entry (raw body); it is parsed per game. */
+/** One cache entry for the whole file: a compact map of Steam appid to parsed anticheat info (raw file is too big for storage). */
 const awacySource = (appId: number, deps: GatherDeps) =>
-  cached<string>(deps, 'awacy', TTL.awacy, async () => fromBody(await get(deps, AWACY_URL), (b) => b, true)).then(
-    (e): Entry<AnticheatInfo> => {
-      if (e.s !== 'ok') return e;
-      const v = findAnticheat(e.v, appId);
-      return v ? { s: 'ok', v } : { s: 'none' };
-    },
-  );
+  cached<Record<string, AnticheatInfo>>(deps, 'awacy', TTL.awacy, async () =>
+    fromBody(await get(deps, AWACY_URL), compactAwacy, true),
+  ).then((e): Entry<AnticheatInfo> => {
+    if (e.s !== 'ok') return e;
+    const v = e.v[String(appId)];
+    return v ? { s: 'ok', v } : { s: 'none' };
+  });
+
+function compactAwacy(body: string): Record<string, AnticheatInfo> | null {
+  let games: any;
+  try {
+    games = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(games)) return null;
+  const out: Record<string, AnticheatInfo> = {};
+  for (const g of games) {
+    const id = g?.storeIds?.steam;
+    if (id === undefined || id === null) continue;
+    const info = findAnticheat(JSON.stringify([g]), Number(id));
+    if (info && !(String(id) in out)) out[String(id)] = info;
+  }
+  return out;
+}
 
 const protonSource = (appId: number, deps: GatherDeps) =>
   cached<ProtonInfo>(deps, `proton:${appId}`, TTL.proton, async () =>
@@ -103,6 +127,9 @@ export async function gatherVerdict(
   appId: number,
   deps: GatherDeps,
 ): Promise<{ verdict: Verdict; reasons: Reason[] }> {
+  if (isNonSteamApp(appId)) {
+    return { verdict: 'unknown', reasons: [{ source: 'Steam', text: 'Это нестимовский ярлык, проверка пропущена' }] };
+  }
   const [steam, agw, awacy, proton] = await Promise.all([
     steamSource(appId, deps),
     agwSource(appId, deps),
