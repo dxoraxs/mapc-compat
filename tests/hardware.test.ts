@@ -25,5 +25,6 @@ describe('hardware', () => {
     expect(compareHardware(DEFAULT_PROFILE, parseRequirements(w3.minimum!), parseRequirements(w3.recommended!)).level).toBe('ok');
     expect(compareHardware({ chip: 'M1', gpuCores: 8, ramGb: 8 }, parseRequirements(w3.minimum!), parseRequirements(w3.recommended!)).level).toBe('weak');
     expect(compareHardware(DEFAULT_PROFILE, {}, {}).level).toBe('unknown');
+    expect(compareHardware(DEFAULT_PROFILE, parseRequirements(w3.minimum!), parseRequirements(w3.recommended!)).text).toContain('RTX 2070');
   });
 });

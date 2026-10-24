@@ -81,7 +81,7 @@ export function compareHardware(p: MacProfile, min?: Requirements, rec?: Require
   const recTier = rec?.gpu ? gpuTier(rec.gpu) : null;
   if (minTier === null && recTier === null) return { level: 'unknown', text: 'нет данных о требуемой видеокарте' };
   const mac = macTier(p);
-  const label = `примерно как ${p.chip}`;
+  const label = `${p.chip} примерно как ${(GPU_TIERS[mac] ?? []).slice(0, 2).join(' / ')}`;
   const ramOk = (r?: Requirements) => r?.ramGb === undefined || p.ramGb * 0.75 >= r.ramGb;
   if (recTier !== null && mac >= recTier && ramOk(rec)) {
     return { level: 'ok', text: `${label} против требуемой ${rec!.gpu}` };
