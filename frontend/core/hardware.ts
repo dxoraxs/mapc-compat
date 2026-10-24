@@ -34,6 +34,12 @@ function flatten(t: Record<number, string[]>): [string, number][] {
 const GPU_LIST = flatten(GPU_TIERS);
 const CHIP_LIST = flatten(CHIP_TIERS);
 
+/** Chip names for the settings dropdown, weakest tier first. */
+export const CHIP_NAMES: readonly string[] = Object.keys(CHIP_TIERS)
+  .map(Number)
+  .sort((a, b) => a - b)
+  .flatMap((k) => CHIP_TIERS[k]);
+
 function stripTags(s: string): string {
   return s
     .replace(/<[^>]*>/g, ' ')
