@@ -14,11 +14,11 @@ const COLORS: Record<Verdict, string> = {
 };
 const LOADING_COLOR = '#4b5563';
 
-/** Steam's own GameStat class (hashed, so looked up at runtime). */
-export function gameStatClass(): string | undefined {
+/** Steam's own hashed classes, looked up at runtime. Undefined until the module is found. */
+export function steamClasses(): { stat: string; label?: string } | undefined {
   try {
     const m: any = findClassModule((mod: any) => mod?.GameStat && mod?.PlayBarLabel);
-    return m?.GameStat;
+    return m?.GameStat ? { stat: m.GameStat, label: m.PlayBarLabel } : undefined;
   } catch {
     return undefined;
   }
@@ -34,7 +34,7 @@ function describe(state: BadgeState): { text: string; title: string; color: stri
 }
 
 /** Creates or updates the single badge inside `row`. Touches the DOM only when something changed. */
-export function ensureBadge(row: HTMLElement, state: BadgeState): HTMLElement {
+export function ensureBadge(row: HTMLElement, state: BadgeState, statClass?: string): HTMLElement {
   const doc = row.ownerDocument;
   const all = Array.from(row.querySelectorAll(`#${BADGE_ID}`)) as HTMLElement[];
   let el = all[0];
@@ -43,8 +43,7 @@ export function ensureBadge(row: HTMLElement, state: BadgeState): HTMLElement {
   if (!el) {
     el = doc.createElement('div');
     el.id = BADGE_ID;
-    const cls = gameStatClass();
-    if (cls) el.className = cls;
+    if (statClass) el.className = statClass;
     el.style.cssText =
       'display:inline-block;margin-left:12px;padding:2px 10px;border-radius:3px;color:#fff;font-size:12px;font-weight:600;line-height:18px;cursor:default;white-space:nowrap;';
     row.appendChild(el);

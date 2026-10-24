@@ -3,7 +3,7 @@ import { TtlCache } from '../core/cache';
 import { fetchUrl } from '../core/rpc';
 import { gatherVerdict, isNonSteamApp } from '../core/gather';
 import type { Reason, Verdict } from '../core/verdict';
-import { ensureBadge, gameStatClass, removeBadges } from './badge';
+import { BADGE_ID, ensureBadge, steamClasses } from './badge';
 import { loadProfile } from './profile';
 
 const LOG = '[mapc-compat]';
@@ -27,89 +27,162 @@ export function appIdFromPath(pathname: string | undefined | null): number | nul
   return m ? Number(m[1]) : null;
 }
 
-type Result = { verdict: Verdict; reasons: Reason[] };
+export type Result = { verdict: Verdict; reasons: Reason[] };
 
-/** Watches one Steam window; returns a stop function. */
-function watchWindow(win: any): () => void {
-  const doc: Document | undefined = win?.document;
-  if (!doc) return () => {};
+export type WatchDeps = {
+  doc: Document;
+  getAppId: () => number | null;
+  findClasses: () => { stat: string; label?: string } | undefined;
+  gather: (appId: number) => Promise<Result>;
+};
+
+/** Same-origin iframe documents inside `doc`, recursively (document order). */
+function frameDocs(doc: Document, out: Document[] = []): Document[] {
+  doc.querySelectorAll('iframe').forEach((f) => {
+    try {
+      const inner = (f as HTMLIFrameElement).contentDocument;
+      if (inner && !out.includes(inner)) {
+        out.push(inner);
+        frameDocs(inner, out);
+      }
+    } catch {
+      // cross-origin frame
+    }
+  });
+  return out;
+}
+
+const allDocs = (doc: Document): Document[] => [doc, ...frameDocs(doc)];
+
+function removeBadgesExcept(docs: Document[], keep: HTMLElement | null) {
+  for (const d of docs) {
+    d.querySelectorAll(`#${BADGE_ID}`).forEach((e) => {
+      if (!keep || !keep.contains(e)) e.remove();
+    });
+  }
+}
+
+/** Watches one window's documents (top + iframes). Exactly one badge per page. */
+export function createWatcher(deps: WatchDeps) {
+  const { doc } = deps;
   const guard = createRequestGuard();
+  let stopped = false;
   let startedFor: number | null = null;
   let result: { appId: number; value: Result } | null = null;
   let timer: any = null;
+  let interval: any = null;
+  let classes: { stat: string; label?: string } | undefined;
+  let warned = false;
+  const observers = new Map<Document, MutationObserver>();
+  const hookedFrames = new WeakSet<object>();
 
-  const pageAppId = () => appIdFromPath(win.MainWindowBrowserManager?.m_lastLocation?.pathname);
+  const schedule = () => {
+    if (!stopped && timer === null) timer = setTimeout(scan, 50);
+  };
 
-  const findRows = (d: Document, out: HTMLElement[], cls: string) => {
-    d.querySelectorAll(`.${cls}`).forEach((e) => {
-      if (e.parentElement && !out.includes(e.parentElement)) out.push(e.parentElement);
-    });
+  const observe = (d: Document) => {
+    if (observers.has(d)) return;
+    const Mo = (d.defaultView as any)?.MutationObserver ?? MutationObserver;
+    const mo = new Mo(schedule);
+    mo.observe(d.documentElement ?? d, { childList: true, subtree: true });
+    observers.set(d, mo);
     d.querySelectorAll('iframe').forEach((f) => {
-      try {
-        const inner = (f as HTMLIFrameElement).contentDocument;
-        if (inner) findRows(inner, out, cls);
-      } catch {
-        // cross-origin frame
-      }
+      if (hookedFrames.has(f)) return;
+      hookedFrames.add(f);
+      f.addEventListener('load', schedule);
     });
   };
 
-  const scan = () => {
+  const fail = (appId: number, isCurrent: (a: number | null) => boolean, e: unknown) => {
+    if (stopped || !isCurrent(deps.getAppId())) return;
+    console.error(`${LOG} verdict failed appid=${appId}: ${String(e)}`);
+    result = { appId, value: { verdict: 'unknown', reasons: [{ source: 'Сеть', text: 'Не удалось получить данные' }] } };
+    schedule();
+  };
+
+  function scan() {
     timer = null;
-    const appId = pageAppId();
-    const cls = gameStatClass();
-    if (appId === null || !cls) return;
+    if (stopped) return;
+    const appId = deps.getAppId();
+    if (appId === null) return;
+    const docs = allDocs(doc);
+    docs.forEach(observe);
     if (isNonSteamApp(appId)) {
-      removeBadges(doc);
-      doc.querySelectorAll('iframe').forEach((f) => {
-        try {
-          const inner = (f as HTMLIFrameElement).contentDocument;
-          if (inner) removeBadges(inner);
-        } catch {}
-      });
+      removeBadgesExcept(docs, null);
       startedFor = appId;
       return;
     }
+    if (!classes) classes = deps.findClasses();
+    if (!classes) {
+      if (!warned) {
+        warned = true;
+        console.log(`${LOG} GameStat class not found`);
+      }
+      return;
+    }
+    const { stat, label } = classes;
     const rows: HTMLElement[] = [];
-    findRows(doc, rows, cls);
+    for (const d of docs) {
+      d.querySelectorAll(`.${stat}`).forEach((e) => {
+        const r = e.parentElement;
+        if (r && !rows.includes(r)) rows.push(r);
+      });
+    }
     if (!rows.length) return;
+    const pick = (label && rows.find((r) => r.querySelector(`.${label}`))) || rows[0];
+    removeBadgesExcept(docs, pick);
+
     if (startedFor !== appId) {
       startedFor = appId;
       result = null;
       const isCurrent = guard.begin(appId);
       console.log(`${LOG} verdict start appid=${appId}`);
-      const cache = new TtlCache(localStorage, Date.now);
-      gatherVerdict(appId, { fetch: fetchUrl, cache, profile: loadProfile() }).then(
+      let p: Promise<Result>;
+      try {
+        p = deps.gather(appId);
+      } catch (e) {
+        p = Promise.reject(e);
+      }
+      p.then(
         (value) => {
-          if (!isCurrent(pageAppId())) return;
+          if (stopped || !isCurrent(deps.getAppId())) return;
           console.log(`${LOG} verdict done appid=${appId} verdict=${value.verdict}`);
           result = { appId, value };
           schedule();
         },
-        (e) => console.error(`${LOG} verdict failed appid=${appId}: ${String(e)}`),
+        (e) => fail(appId, isCurrent, e),
       );
     }
-    for (const row of rows) {
-      if (result && result.appId === appId) ensureBadge(row, { kind: 'done', ...result.value });
-      else ensureBadge(row, { kind: 'loading' });
-    }
-  };
+    if (result && result.appId === appId) ensureBadge(pick, { kind: 'done', ...result.value }, stat);
+    else ensureBadge(pick, { kind: 'loading' }, stat);
+  }
 
-  const schedule = () => {
-    if (timer === null) timer = setTimeout(scan, 50);
-  };
+  function start() {
+    observe(doc);
+    interval = setInterval(schedule, 2000);
+    schedule();
+  }
 
-  const mo = new MutationObserver(schedule);
-  mo.observe(doc.documentElement ?? doc, { childList: true, subtree: true });
-  schedule();
-  return () => {
-    mo.disconnect();
+  function stop() {
+    if (stopped) return;
+    stopped = true;
     if (timer !== null) clearTimeout(timer);
-  };
+    if (interval !== null) clearInterval(interval);
+    timer = interval = null;
+    observers.forEach((o) => o.disconnect());
+    observers.clear();
+    try {
+      removeBadgesExcept(allDocs(doc), null);
+    } catch {
+      // window already gone
+    }
+  }
+
+  return { scan, start, stop };
 }
 
 export function startObserver(): () => void {
-  const stops: Array<() => void> = [];
+  const watchers = new Set<{ stop: () => void }>();
   let stopped = false;
   try {
     (Millennium as any).AddWindowCreateHook?.((context: any) => {
@@ -117,7 +190,25 @@ export function startObserver(): () => void {
         const name: string = context?.m_strName ?? '';
         if (stopped || !name.startsWith('SP ')) return;
         const win = context.m_popup ?? context.m_window;
-        if (win) stops.push(watchWindow(win));
+        const doc: Document | undefined = win?.document;
+        if (!doc) return;
+        const cache = new TtlCache(localStorage, Date.now);
+        const w = createWatcher({
+          doc,
+          getAppId: () => appIdFromPath(win.MainWindowBrowserManager?.m_lastLocation?.pathname),
+          findClasses: steamClasses,
+          gather: (appId) => gatherVerdict(appId, { fetch: fetchUrl, cache, profile: loadProfile() }),
+        });
+        watchers.add(w);
+        try {
+          win.addEventListener?.('unload', () => {
+            w.stop();
+            watchers.delete(w);
+          });
+        } catch {
+          // no unload hook available
+        }
+        w.start();
       } catch (e) {
         console.error(`${LOG} window hook failed: ${String(e)}`);
       }
@@ -127,6 +218,7 @@ export function startObserver(): () => void {
   }
   return () => {
     stopped = true;
-    stops.splice(0).forEach((s) => s());
+    watchers.forEach((w) => w.stop());
+    watchers.clear();
   };
 }
