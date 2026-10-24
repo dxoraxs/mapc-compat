@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SteamClientHomebrew/Millennium/main/src/sys/plugin-schema.json",
+  "name": "mapc-compat",
+  "common_name": "MaPC compat",
+  "description": "Shows a macOS compatibility verdict badge on the library game page.",
+  "author": "dxoraxs",
+  "version": "0.1.0",
+  "useBackend": true,
+  "backendType": "lua"
+}

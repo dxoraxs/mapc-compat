@@ -1,0 +1,19 @@
+{
+  "name": "mapc-compat",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "millennium-ttc --build dev",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@steambrew/client": "^5.5.3"
+  },
+  "devDependencies": {
+    "@steambrew/ttc": "2.8.7",
+    "typescript": "^5.4.5",
+    "happy-dom": "*",
+    "@happy-dom/global-registrator": "*"
+  }
+}
