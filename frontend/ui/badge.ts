@@ -45,7 +45,7 @@ export function ensureBadge(row: HTMLElement, state: BadgeState, statClass?: str
     el.id = BADGE_ID;
     if (statClass) el.className = statClass;
     el.style.cssText =
-      'display:inline-block;margin-left:12px;padding:2px 10px;border-radius:3px;color:#fff;font-size:12px;font-weight:600;line-height:18px;cursor:default;white-space:nowrap;';
+      'display:inline-block;align-self:center;flex:0 0 auto;height:auto;min-height:0;margin:0 0 0 12px;padding:2px 10px;border-radius:3px;color:#fff;font-size:12px;font-weight:600;line-height:18px;cursor:default;white-space:nowrap;';
     row.appendChild(el);
   } else if (row.lastElementChild !== el) {
     row.appendChild(el);
