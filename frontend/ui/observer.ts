@@ -132,6 +132,7 @@ export function createWatcher(deps: WatchDeps) {
     if (!rows.length) return;
     // Real Steam markup: .GameStatsSection > .tool-tip-source > .GameStat. The page has the
     // section twice (normal and the sticky bar shown on scroll), so each section gets a badge.
+    // GameStatsSection is a plain (unhashed) class name; without it we fall back to one row.
     const sections: HTMLElement[] = [];
     for (const r of rows) {
       const sec = r.closest('.GameStatsSection') as HTMLElement | null;

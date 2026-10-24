@@ -15,9 +15,4 @@ rsync -a --delete \
   --exclude 'scripts' --exclude 'bun.lock' --exclude '.superpowers' \
   "$ROOT/" "$DEST/"
 
-# Throwaway spike plugin created by this project; the only other folder this script touches.
-if [ -d "$PLUGINS/mapc-compat-spike" ]; then
-  rm -rf "$PLUGINS/mapc-compat-spike"
-fi
-
 echo "Installed to: $DEST"
